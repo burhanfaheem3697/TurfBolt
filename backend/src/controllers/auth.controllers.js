@@ -283,14 +283,63 @@ const getUserBookings = asyncHandler(async (req,res) => {
     //get user by Id 
     const userId = req.user._id
 
-    const bookings = await Booking.find({user_id : userId}).populate('user_id','username email phone').populate({
-        path : 'turf_id',
-        select : 'name address pricePerHour',
-        populate : {
-            path : 'owner_id',
-            select : 'username email phone'
-        }
-    }).populate('slot_id','startTime endTime Date')
+    const bookings = await Booking.aggregate([
+  {
+    $match: {
+      user_id: new mongoose.Types.ObjectId(userId)
+    }
+  },
+
+  // Join slot
+  {
+    $lookup: {
+      from: 'slots',
+      localField: 'slot_id',
+      foreignField: '_id',
+      as: 'slot'
+    }
+  },
+  { $unwind: '$slot' },
+
+  // Join turf
+  {
+    $lookup: {
+      from: 'turfs',
+      localField: 'turf_id',
+      foreignField: '_id',
+      as: 'turf'
+    }
+  },
+  { $unwind: '$turf' },
+
+  // Join turf.owner
+  {
+    $lookup: {
+      from: 'users',
+      localField: 'turf.owner_id',
+      foreignField: '_id',
+      as: 'owner'
+    }
+  },
+  { $unwind: '$owner' },
+
+  // Flatten everything
+  {
+    $project: {
+      bookingId: '$_id',
+      slotStartTime: '$slot.startTime',
+      slotEndTime: '$slot.endTime',
+      slotDate: '$slot.date',
+      turfName: '$turf.name',
+      turfAddress: '$turf.address',
+      turfPricePerHour: '$turf.pricePerHour',
+      ownerName: '$owner.username',
+      ownerEmail: '$owner.email',
+      ownerPhone: '$owner.phone'
+    }
+  }
+]);
+
 
     if(!bookings) throw new ApiError(400,"User has no bookings")
 
